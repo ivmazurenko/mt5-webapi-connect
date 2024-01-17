@@ -24,31 +24,50 @@ public class Connector
     {
         var path1 = $"/api/auth/start?version=484&agent={agent}&login={login}&type=manager";
 
-        var (is1Ok, response1) = await SendGet(path1);
+        var (is1Ok, response1) = await SendGet<AuthStep1Dto>(path1);
 
-        var jsonObj = System.Text.Json.JsonSerializer.Deserialize<AuthStep1Dto>(response1);
-
-        if (!jsonObj.RetCode.Equals("0 Done"))
+        if (response1 is null)
+            return false;
+        if (response1.RetCode != "0 Done")
             return false;
 
         var cliRand = CliRand.Calculate();
 
-        var srvRandAnswer = SrvRandAnswer.Calculate(password, jsonObj.RrvRand);
+        var srvRandAnswer = SrvRandAnswer.Calculate(password, response1.RrvRand);
 
         var path2 = $"/api/auth/answer?srv_rand_answer={srvRandAnswer}&cli_rand={cliRand}";
 
-        var (is2Ok, response2) = await SendGet(path2);
+        var (is2Ok, _) = await SendGet<AuthStep2Dto>(path2);
 
         return is2Ok;
     }
 
-    public async ValueTask<(bool, string? content)> SendGet(string path)
+    public async ValueTask<(bool, T? content)> SendGet<T>(string path)
     {
         var url = _host + path;
 
         var httpResponseMessage = _httpClient.GetAsync(new Uri(url)).Result;
-        var content = await httpResponseMessage.Content.ReadAsStringAsync();
-        Console.WriteLine($"{httpResponseMessage.IsSuccessStatusCode} {content}");
-        return (httpResponseMessage.IsSuccessStatusCode, content);
+
+        if (httpResponseMessage.IsSuccessStatusCode)
+        {
+            var stream = await httpResponseMessage.Content.ReadAsStreamAsync();
+            return (true, await System.Text.Json.JsonSerializer.DeserializeAsync<T>(stream));
+        }
+
+        return (false, default);
+    }
+
+    public async ValueTask SendDebug(string path)
+    {
+        var url = _host + path;
+
+        var httpResponseMessage = _httpClient.GetAsync(new Uri(url)).Result;
+
+        if (httpResponseMessage.IsSuccessStatusCode)
+        {
+            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+
+            Console.WriteLine(responseContent);
+        }
     }
 }
